@@ -49,12 +49,8 @@ def render_globe(*,
     cx = vw / 2.0
     cy = vh / 2.0
 
-    # Pass 1: land disc via per-cell inverse projection. Also flag every cell
-    # that has at least one sub-pixel inside the disc — that's "inside the
-    # ocean" coverage, used to paint a water background even where there's
-    # no land.
+    # Pass 1: land disc via per-cell inverse projection.
     land_patterns = [0] * (width * height)
-    disc_cells = [False] * (width * height)
     for py in range(vh):
         sy = (cy - py - 0.5) / radius
         if abs(sy) > 1.0:
@@ -64,16 +60,15 @@ def render_globe(*,
             sx = ((px + 0.5) - cx) / radius
             if sx * sx + sy2 > 1.0:
                 continue
-            cx_idx = px // VIRTUAL_DOT_WIDTH
-            cy_idx = py // VIRTUAL_DOT_HEIGHT
-            i = cy_idx * width + cx_idx
-            disc_cells[i] = True
             geo = unproject_from_screen(sx, sy, view_lat, view_lon)
             if geo is None:
                 continue
             lat, lon = geo
             if not is_land(lat, lon):
                 continue
+            cx_idx = px // VIRTUAL_DOT_WIDTH
+            cy_idx = py // VIRTUAL_DOT_HEIGHT
+            i = cy_idx * width + cx_idx
             land_patterns[i] |= BRAILLE_BITS[py % VIRTUAL_DOT_HEIGHT][px % VIRTUAL_DOT_WIDTH]
 
     # Pass 1.5: graticule (lat/lon lines). Sample every 30° and walk densely
@@ -112,30 +107,20 @@ def render_globe(*,
 
     # A fully-saturated cell (0xFF) is interior land; any partial pattern
     # straddles land + ocean → coastline. Cells with no land bits but grid
-    # bits render as graticule. Every in-disc cell additionally picks up the
-    # ocean bgcolor, so the disc reads as a solid sphere.
-    ocean = theme.ocean
-    land_on_ocean = theme.land + ocean
-    coast_on_ocean = theme.coast + ocean
-    grid_on_ocean = theme.grid + ocean
+    # bits render as graticule.
     for cy_idx in range(height):
         for cx_idx in range(width):
             i = cy_idx * width + cx_idx
             land_pat = land_patterns[i]
             if land_pat:
-                style = land_on_ocean if land_pat == 0xFF else coast_on_ocean
+                style = theme.land if land_pat == 0xFF else theme.coast
                 canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[land_pat], style)
                 continue
             grid_pat = grid_patterns[i]
             if grid_pat:
-                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[grid_pat], grid_on_ocean)
-                continue
-            if disc_cells[i]:
-                canvas[cy_idx][cx_idx] = StyledCell(" ", ocean)
+                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[grid_pat], theme.grid)
 
     # Pass 2: trail (forward-project each stored point).
-    trail_dim_on_ocean = theme.trail_dim + ocean
-    trail_bright_on_ocean = theme.trail_bright + ocean
     for point in trail:
         sx, sy, visible = project_to_screen(point.lat, point.lon, view_lat, view_lon)
         if not visible:
@@ -148,11 +133,10 @@ def render_globe(*,
         char_y = py // VIRTUAL_DOT_HEIGHT
         age = max(0.0, now - point.timestamp)
         recency = max(0.0, 1.0 - age / TRAIL_AGE_FOR_FULL_FADE)
-        style = trail_bright_on_ocean if recency > 0.5 else trail_dim_on_ocean
+        style = theme.trail_bright if recency > 0.5 else theme.trail_dim
         canvas[char_y][char_x] = StyledCell("•", style)
 
     # Pass 3: ISS marker (overrides trail).
-    iss_on_ocean = theme.iss_marker + ocean
     sx, sy, visible = project_to_screen(iss_lat, iss_lon, view_lat, view_lon)
     if visible:
         px = int(cx + sx * radius)
@@ -160,6 +144,6 @@ def render_globe(*,
         if 0 <= px < vw and 0 <= py < vh:
             char_x = px // VIRTUAL_DOT_WIDTH
             char_y = py // VIRTUAL_DOT_HEIGHT
-            canvas[char_y][char_x] = StyledCell("●", iss_on_ocean)
+            canvas[char_y][char_x] = StyledCell("●", theme.iss_marker)
 
     return canvas
