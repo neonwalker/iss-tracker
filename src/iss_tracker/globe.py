@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+import math
 import time
 from dataclasses import dataclass
 
@@ -17,11 +19,36 @@ from .trail import Trail
 # rolls off the back of the buffer entirely.
 TRAIL_AGE_FOR_FULL_FADE = 30 * 60  # 30 min
 
+# Dim attribute on top of an existing style produces the ANSI half-intensity
+# form — used for the night side of the Earth.
+NIGHT_OVERLAY = Style(dim=True)
+
+# Hardcoded star colors (theme-independent — stars look white in any palette).
+_STAR_DIM = Style(color="grey50", dim=True)
+_STAR_MED = Style(color="grey70")
+_STAR_BRIGHT = Style(color="bright_white", bold=True)
+
 
 @dataclass(frozen=True, slots=True)
 class StyledCell:
     char: str
     style: Style
+
+
+def subsolar_point(unix_time: float) -> tuple[float, float]:
+    """Approximate sub-solar latitude/longitude at the given UTC unix time.
+
+    Good to ~1° — the equation-of-time term is omitted, which is fine for
+    visualization. Declination is the standard sinusoidal model.
+    """
+    dt = datetime.datetime.fromtimestamp(unix_time, tz=datetime.timezone.utc)
+    doy = dt.timetuple().tm_yday
+    decl = math.radians(23.44) * math.sin(math.radians(360.0 / 365.25 * (doy - 81)))
+    solar_lat = math.degrees(decl)
+    hours = dt.hour + dt.minute / 60.0 + dt.second / 3600.0
+    solar_lon = -15.0 * (hours - 12.0)
+    solar_lon = ((solar_lon + 180.0) % 360.0) - 180.0
+    return solar_lat, solar_lon
 
 
 def render_globe(*,
@@ -49,8 +76,57 @@ def render_globe(*,
     cx = vw / 2.0
     cy = vh / 2.0
 
-    # Pass 1: land disc via per-cell inverse projection.
+    # Solar position for day/night shading.
+    solar_lat, solar_lon = subsolar_point(now)
+    slat_r = math.radians(solar_lat)
+    slon_r = math.radians(solar_lon)
+    sin_solar = math.sin(slat_r)
+    cos_solar = math.cos(slat_r)
+
+    def _is_sunlit(lat: float, lon: float) -> bool:
+        lat_r = math.radians(lat)
+        lon_r = math.radians(lon)
+        # cos(angular distance from subsolar point) > 0 → on the sunlit hemisphere.
+        return (math.sin(lat_r) * sin_solar +
+                math.cos(lat_r) * cos_solar * math.cos(lon_r - slon_r)) > 0.0
+
+    # Pass 0: stars in the off-disc background. Deterministic per (cx_idx, cy_idx)
+    # so they don't flicker between frames. Cells that touch the disc are skipped.
+    radius_sq = radius * radius
+    half_w = VIRTUAL_DOT_WIDTH / 2.0
+    half_h = VIRTUAL_DOT_HEIGHT / 2.0
+    star_tiers = (_STAR_DIM, _STAR_MED, _STAR_BRIGHT)
+    for cy_idx in range(height):
+        center_vy = cy_idx * VIRTUAL_DOT_HEIGHT + half_h
+        dy = center_vy - cy
+        for cx_idx in range(width):
+            center_vx = cx_idx * VIRTUAL_DOT_WIDTH + half_w
+            dx = center_vx - cx
+            # If the cell's nearest corner could still be inside the disc, skip.
+            # The cell is fully off-disc when (|dx| - half_w)² + (|dy| - half_h)² > radius².
+            nx = max(0.0, abs(dx) - half_w)
+            ny = max(0.0, abs(dy) - half_h)
+            if nx * nx + ny * ny <= radius_sq:
+                continue
+            h = (cx_idx * 73856093) ^ (cy_idx * 19349663)
+            if h & 0x3F < 4:  # ~4/64 = 6% density
+                sub_idx = (h >> 6) & 7
+                bit = BRAILLE_BITS[sub_idx // 2][sub_idx % 2]
+                tier_bits = (h >> 10) & 0xF
+                if tier_bits < 1:        # ~6%   bright
+                    tier = 2
+                elif tier_bits < 5:      # ~25%  medium
+                    tier = 1
+                else:                    # ~69%  dim
+                    tier = 0
+                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[bit], star_tiers[tier])
+
+    # Pass 1: land disc via per-cell inverse projection. For each land sub-pixel
+    # also track whether it falls on the sunlit hemisphere — used at finalize to
+    # pick day vs night styling.
     land_patterns = [0] * (width * height)
+    land_lit = [0] * (width * height)
+    land_unlit = [0] * (width * height)
     for py in range(vh):
         sy = (cy - py - 0.5) / radius
         if abs(sy) > 1.0:
@@ -70,14 +146,22 @@ def render_globe(*,
             cy_idx = py // VIRTUAL_DOT_HEIGHT
             i = cy_idx * width + cx_idx
             land_patterns[i] |= BRAILLE_BITS[py % VIRTUAL_DOT_HEIGHT][px % VIRTUAL_DOT_WIDTH]
+            if _is_sunlit(lat, lon):
+                land_lit[i] += 1
+            else:
+                land_unlit[i] += 1
 
     # Pass 1.5: graticule (lat/lon lines). Sample every 30° and walk densely
     # along each line, projecting to screen. Skip sub-pixels that fall on a
     # land bit — the graticule never draws *over* land. Cells that contain
     # any land are also left alone at finalize so the lines break at coasts.
+    # Each grid sub-pixel also tracks day/night so the lines dim on the
+    # night side.
     grid_patterns = [0] * (width * height)
+    grid_lit = [0] * (width * height)
+    grid_unlit = [0] * (width * height)
 
-    def _plot_grid(vx: int, vy: int) -> None:
+    def _plot_grid(vx: int, vy: int, sunlit: bool) -> None:
         if not (0 <= vx < vw and 0 <= vy < vh):
             return
         ci = (vy // VIRTUAL_DOT_HEIGHT) * width + (vx // VIRTUAL_DOT_WIDTH)
@@ -85,6 +169,10 @@ def render_globe(*,
         if land_patterns[ci] & bit:
             return
         grid_patterns[ci] |= bit
+        if sunlit:
+            grid_lit[ci] += 1
+        else:
+            grid_unlit[ci] += 1
 
     sample_step = 0.5  # degrees along each line; oversampled for smooth curves
     # Latitude rings at -60, -30, 0, 30, 60.
@@ -93,7 +181,8 @@ def render_globe(*,
         while lon < 180.0:
             sx, sy, vis = project_to_screen(lat_deg, lon, view_lat, view_lon)
             if vis:
-                _plot_grid(int(cx + sx * radius), int(cy - sy * radius))
+                _plot_grid(int(cx + sx * radius), int(cy - sy * radius),
+                           _is_sunlit(lat_deg, lon))
             lon += sample_step
     # Longitude meridians every 30°.
     for lon_deg_i in range(-180, 180, 30):
@@ -102,23 +191,30 @@ def render_globe(*,
         while lat <= 89.0:
             sx, sy, vis = project_to_screen(lat, lon_deg, view_lat, view_lon)
             if vis:
-                _plot_grid(int(cx + sx * radius), int(cy - sy * radius))
+                _plot_grid(int(cx + sx * radius), int(cy - sy * radius),
+                           _is_sunlit(lat, lon_deg))
             lat += sample_step
 
     # A fully-saturated cell (0xFF) is interior land; any partial pattern
     # straddles land + ocean → coastline. Cells with no land bits but grid
-    # bits render as graticule.
+    # bits render as graticule. Day cells use the base style; night cells
+    # add the NIGHT_OVERLAY for half-intensity rendering.
     for cy_idx in range(height):
         for cx_idx in range(width):
             i = cy_idx * width + cx_idx
             land_pat = land_patterns[i]
             if land_pat:
-                style = theme.land if land_pat == 0xFF else theme.coast
-                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[land_pat], style)
+                base = theme.land if land_pat == 0xFF else theme.coast
+                if land_unlit[i] > land_lit[i]:
+                    base = base + NIGHT_OVERLAY
+                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[land_pat], base)
                 continue
             grid_pat = grid_patterns[i]
             if grid_pat:
-                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[grid_pat], theme.grid)
+                base = theme.grid
+                if grid_unlit[i] > grid_lit[i]:
+                    base = base + NIGHT_OVERLAY
+                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[grid_pat], base)
 
     # Pass 2: trail (forward-project each stored point).
     for point in trail:
@@ -134,6 +230,8 @@ def render_globe(*,
         age = max(0.0, now - point.timestamp)
         recency = max(0.0, 1.0 - age / TRAIL_AGE_FOR_FULL_FADE)
         style = theme.trail_bright if recency > 0.5 else theme.trail_dim
+        if not _is_sunlit(point.lat, point.lon):
+            style = style + NIGHT_OVERLAY
         canvas[char_y][char_x] = StyledCell("•", style)
 
     # Pass 3: ISS marker (overrides trail).
@@ -144,6 +242,9 @@ def render_globe(*,
         if 0 <= px < vw and 0 <= py < vh:
             char_x = px // VIRTUAL_DOT_WIDTH
             char_y = py // VIRTUAL_DOT_HEIGHT
-            canvas[char_y][char_x] = StyledCell("●", theme.iss_marker)
+            marker_style = theme.iss_marker
+            if not _is_sunlit(iss_lat, iss_lon):
+                marker_style = marker_style + NIGHT_OVERLAY
+            canvas[char_y][char_x] = StyledCell("●", marker_style)
 
     return canvas
