@@ -43,7 +43,7 @@ class DemoSource:
     """Generates synthetic ISS samples following a 51.6 deg inclined orbit."""
 
     INCLINATION_DEG = 51.6
-    PERIOD_SECONDS = 90.0 * 60.0
+    PERIOD_SECONDS = 60.0  # synthetic: full orbit per minute so rotation is visible
     ALTITUDE_KM = 420.0
     VELOCITY_KMH = 27600.0
 
