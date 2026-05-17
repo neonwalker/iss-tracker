@@ -26,14 +26,19 @@ def parse_args(argv: list[str] | None = None) -> Args:
     )
     parser.add_argument("--fps", type=int, default=10,
                         help="render frames per second (default: 10)")
-    parser.add_argument("--poll", type=float, default=5.0,
-                        help="API poll interval seconds (default: 5, min 2)")
+    parser.add_argument("--poll", type=float, default=None,
+                        help="position update interval, seconds "
+                             "(default: 5s live, 0.5s demo)")
     parser.add_argument("--theme", choices=theme_names(), default="default")
     parser.add_argument("--demo", action="store_true",
                         help="use synthetic ISS motion instead of the API")
     ns = parser.parse_args(argv)
-    if ns.poll < 2.0:
-        parser.error("--poll must be >= 2.0")
+    if ns.poll is None:
+        ns.poll = 0.5 if ns.demo else 5.0
+    # Demo has no rate-limit; live mode respects wheretheiss.at's ~1 req/s.
+    min_poll = 0.1 if ns.demo else 1.0
+    if ns.poll < min_poll:
+        parser.error(f"--poll must be >= {min_poll}")
     if ns.fps < 1 or ns.fps > 60:
         parser.error("--fps must be in [1, 60]")
     return Args(fps=ns.fps, poll=ns.poll, theme=ns.theme, demo=ns.demo)
