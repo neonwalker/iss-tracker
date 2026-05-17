@@ -7,14 +7,7 @@ from dataclasses import dataclass
 
 from rich.style import Style
 
-from .braille import (
-    BRAILLE_BITS,
-    BRAILLE_CHARS,
-    VIRTUAL_DOT_HEIGHT,
-    VIRTUAL_DOT_WIDTH,
-    BrailleCanvas,
-    virtual_line_points,
-)
+from .braille import BRAILLE_BITS, BRAILLE_CHARS, VIRTUAL_DOT_HEIGHT, VIRTUAL_DOT_WIDTH
 from .land_mask import is_land
 from .projection import project_to_screen, unproject_from_screen
 from .theme import Theme
@@ -84,44 +77,21 @@ def render_globe(*,
             if pattern:
                 canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[pattern], theme.land)
 
-    # Pass 2: trail as connected line segments at sub-pixel resolution. Each
-    # segment between consecutive trail points is rasterized into a Braille
-    # overlay with intensity = recency (older = dimmer). The overlay is then
-    # composited onto the main canvas with a 5-band style gradient.
-    points = list(trail)
-    if len(points) >= 2:
-        trail_canvas = BrailleCanvas(width, height)
-        for i in range(len(points) - 1):
-            p0, p1 = points[i], points[i + 1]
-            sx0, sy0, vis0 = project_to_screen(p0.lat, p0.lon, view_lat, view_lon)
-            sx1, sy1, vis1 = project_to_screen(p1.lat, p1.lon, view_lat, view_lon)
-            if not (vis0 and vis1):
-                continue
-            px0 = int(cx + sx0 * radius)
-            py0 = int(cy - sy0 * radius)
-            px1 = int(cx + sx1 * radius)
-            py1 = int(cy - sy1 * radius)
-            seg_age = max(0.0, now - (p0.timestamp + p1.timestamp) / 2.0)
-            recency = max(0.0, 1.0 - seg_age / TRAIL_AGE_FOR_FULL_FADE)
-            if recency <= 0.0:
-                continue
-            for vx, vy in virtual_line_points((px0, py0), (px1, py1)):
-                trail_canvas.plot(vx, vy, intensity=recency)
-
-        bands = theme.trail_styles
-        nbands = len(bands)
-        for cy_idx in range(height):
-            for cx_idx in range(width):
-                pattern = trail_canvas.pattern_at_char(cx_idx, cy_idx)
-                if not pattern:
-                    continue
-                intensity = trail_canvas.intensity_at_char(cx_idx, cy_idx)
-                band_idx = int(intensity * nbands)
-                if band_idx >= nbands:
-                    band_idx = nbands - 1
-                canvas[cy_idx][cx_idx] = StyledCell(
-                    BRAILLE_CHARS[pattern], bands[band_idx]
-                )
+    # Pass 2: trail (forward-project each stored point).
+    for point in trail:
+        sx, sy, visible = project_to_screen(point.lat, point.lon, view_lat, view_lon)
+        if not visible:
+            continue
+        px = int(cx + sx * radius)
+        py = int(cy - sy * radius)
+        if not (0 <= px < vw and 0 <= py < vh):
+            continue
+        char_x = px // VIRTUAL_DOT_WIDTH
+        char_y = py // VIRTUAL_DOT_HEIGHT
+        age = max(0.0, now - point.timestamp)
+        recency = max(0.0, 1.0 - age / TRAIL_AGE_FOR_FULL_FADE)
+        style = theme.trail_bright if recency > 0.5 else theme.trail_dim
+        canvas[char_y][char_x] = StyledCell("•", style)
 
     # Pass 3: ISS marker (overrides trail).
     sx, sy, visible = project_to_screen(iss_lat, iss_lon, view_lat, view_lon)

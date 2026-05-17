@@ -60,22 +60,3 @@ class BrailleCanvas:
                    for x in range(self.width)]
             rows.append(row)
         return rows
-
-
-def virtual_line_points(start: tuple[int, int],
-                        end: tuple[int, int]) -> list[tuple[int, int]]:
-    """Bresenham-ish: dense points along the line from start to end in virtual coords."""
-    sx, sy = start
-    ex, ey = end
-    dx = ex - sx
-    dy = ey - sy
-    steps = max(abs(dx), abs(dy), 1)
-    points: list[tuple[int, int]] = []
-    for i in range(steps + 1):
-        t = i / steps
-        x = round(sx + dx * t)
-        y = round(sy + dy * t)
-        pt = (x, y)
-        if not points or points[-1] != pt:
-            points.append(pt)
-    return points
