@@ -23,11 +23,6 @@ TRAIL_AGE_FOR_FULL_FADE = 30 * 60  # 30 min
 # form — used for the night side of the Earth.
 NIGHT_OVERLAY = Style(dim=True)
 
-# Hardcoded star colors (theme-independent — stars look white in any palette).
-_STAR_DIM = Style(color="grey50", dim=True)
-_STAR_MED = Style(color="grey70")
-_STAR_BRIGHT = Style(color="bright_white", bold=True)
-
 
 @dataclass(frozen=True, slots=True)
 class StyledCell:
@@ -89,37 +84,6 @@ def render_globe(*,
         # cos(angular distance from subsolar point) > 0 → on the sunlit hemisphere.
         return (math.sin(lat_r) * sin_solar +
                 math.cos(lat_r) * cos_solar * math.cos(lon_r - slon_r)) > 0.0
-
-    # Pass 0: stars in the off-disc background. Deterministic per (cx_idx, cy_idx)
-    # so they don't flicker between frames. Cells that touch the disc are skipped.
-    radius_sq = radius * radius
-    half_w = VIRTUAL_DOT_WIDTH / 2.0
-    half_h = VIRTUAL_DOT_HEIGHT / 2.0
-    star_tiers = (_STAR_DIM, _STAR_MED, _STAR_BRIGHT)
-    for cy_idx in range(height):
-        center_vy = cy_idx * VIRTUAL_DOT_HEIGHT + half_h
-        dy = center_vy - cy
-        for cx_idx in range(width):
-            center_vx = cx_idx * VIRTUAL_DOT_WIDTH + half_w
-            dx = center_vx - cx
-            # If the cell's nearest corner could still be inside the disc, skip.
-            # The cell is fully off-disc when (|dx| - half_w)² + (|dy| - half_h)² > radius².
-            nx = max(0.0, abs(dx) - half_w)
-            ny = max(0.0, abs(dy) - half_h)
-            if nx * nx + ny * ny <= radius_sq:
-                continue
-            h = (cx_idx * 73856093) ^ (cy_idx * 19349663)
-            if h & 0x3F < 4:  # ~4/64 = 6% density
-                sub_idx = (h >> 6) & 7
-                bit = BRAILLE_BITS[sub_idx // 2][sub_idx % 2]
-                tier_bits = (h >> 10) & 0xF
-                if tier_bits < 1:        # ~6%   bright
-                    tier = 2
-                elif tier_bits < 5:      # ~25%  medium
-                    tier = 1
-                else:                    # ~69%  dim
-                    tier = 0
-                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[bit], star_tiers[tier])
 
     # Pass 1: land disc via per-cell inverse projection. For each land sub-pixel
     # also track whether it falls on the sunlit hemisphere — used at finalize to
