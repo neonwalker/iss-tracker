@@ -11,6 +11,7 @@ from rich.style import Style
 class Theme:
     name: str
     background: Style
+    ocean: Style  # bgcolor only; composed onto every cell inside the disc
     land: Style
     coast: Style
     grid: Style
@@ -26,6 +27,7 @@ _THEMES: dict[str, Theme] = {
     "default": Theme(
         name="default",
         background=Style(color="grey15"),
+        ocean=Style(bgcolor="deep_sky_blue4"),
         land=Style(color="cyan3"),
         coast=Style(color="bright_cyan", bold=True),
         grid=Style(color="grey23"),
@@ -39,6 +41,7 @@ _THEMES: dict[str, Theme] = {
     "green": Theme(
         name="green",
         background=Style(color="grey15"),
+        ocean=Style(bgcolor="grey19"),
         land=Style(color="green4"),
         coast=Style(color="bright_green", bold=True),
         grid=Style(color="grey23"),
@@ -52,6 +55,7 @@ _THEMES: dict[str, Theme] = {
     "red": Theme(
         name="red",
         background=Style(color="grey15"),
+        ocean=Style(bgcolor="grey19"),
         land=Style(color="red3"),
         coast=Style(color="bright_red", bold=True),
         grid=Style(color="grey23"),
@@ -65,6 +69,7 @@ _THEMES: dict[str, Theme] = {
     "violet": Theme(
         name="violet",
         background=Style(color="grey15"),
+        ocean=Style(bgcolor="#1a0a2e"),
         land=Style(color="purple4"),
         coast=Style(color="bright_magenta", bold=True),
         grid=Style(color="grey23"),
