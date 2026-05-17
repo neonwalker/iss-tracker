@@ -71,15 +71,54 @@ def render_globe(*,
             i = cy_idx * width + cx_idx
             land_patterns[i] |= BRAILLE_BITS[py % VIRTUAL_DOT_HEIGHT][px % VIRTUAL_DOT_WIDTH]
 
+    # Pass 1.5: graticule (lat/lon lines). Sample every 30° and walk densely
+    # along each line, projecting to screen. Skip sub-pixels that fall on a
+    # land bit — the graticule never draws *over* land. Cells that contain
+    # any land are also left alone at finalize so the lines break at coasts.
+    grid_patterns = [0] * (width * height)
+
+    def _plot_grid(vx: int, vy: int) -> None:
+        if not (0 <= vx < vw and 0 <= vy < vh):
+            return
+        ci = (vy // VIRTUAL_DOT_HEIGHT) * width + (vx // VIRTUAL_DOT_WIDTH)
+        bit = BRAILLE_BITS[vy % VIRTUAL_DOT_HEIGHT][vx % VIRTUAL_DOT_WIDTH]
+        if land_patterns[ci] & bit:
+            return
+        grid_patterns[ci] |= bit
+
+    sample_step = 0.5  # degrees along each line; oversampled for smooth curves
+    # Latitude rings at -60, -30, 0, 30, 60.
+    for lat_deg in (-60.0, -30.0, 0.0, 30.0, 60.0):
+        lon = -180.0
+        while lon < 180.0:
+            sx, sy, vis = project_to_screen(lat_deg, lon, view_lat, view_lon)
+            if vis:
+                _plot_grid(int(cx + sx * radius), int(cy - sy * radius))
+            lon += sample_step
+    # Longitude meridians every 30°.
+    for lon_deg_i in range(-180, 180, 30):
+        lon_deg = float(lon_deg_i)
+        lat = -89.0
+        while lat <= 89.0:
+            sx, sy, vis = project_to_screen(lat, lon_deg, view_lat, view_lon)
+            if vis:
+                _plot_grid(int(cx + sx * radius), int(cy - sy * radius))
+            lat += sample_step
+
     # A fully-saturated cell (0xFF) is interior land; any partial pattern
-    # straddles land + ocean → coastline.
+    # straddles land + ocean → coastline. Cells with no land bits but grid
+    # bits render as graticule.
     for cy_idx in range(height):
         for cx_idx in range(width):
-            pattern = land_patterns[cy_idx * width + cx_idx]
-            if not pattern:
+            i = cy_idx * width + cx_idx
+            land_pat = land_patterns[i]
+            if land_pat:
+                style = theme.land if land_pat == 0xFF else theme.coast
+                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[land_pat], style)
                 continue
-            style = theme.land if pattern == 0xFF else theme.coast
-            canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[pattern], style)
+            grid_pat = grid_patterns[i]
+            if grid_pat:
+                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[grid_pat], theme.grid)
 
     # Pass 2: trail (forward-project each stored point).
     for point in trail:
