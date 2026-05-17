@@ -1,15 +1,12 @@
-"""Rich layout composition: globe panel + stats panel."""
+"""Fullscreen globe with stats overlaid in the top-right corner."""
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass
 
-from rich.align import Align
 from rich.console import Console, ConsoleOptions, RenderResult
-from rich.layout import Layout
-from rich.panel import Panel
-from rich.table import Table
+from rich.style import Style
 from rich.text import Text
 
 from .globe import StyledCell, render_globe
@@ -27,6 +24,8 @@ class AppState:
 
 
 class GlobePane:
+    """Full-terminal renderable: globe canvas with stats stamped on top."""
+
     def __init__(self, *, tracker: ViewTracker, trail: Trail, theme: Theme,
                  state: AppState) -> None:
         self._tracker = tracker
@@ -40,13 +39,86 @@ class GlobePane:
         view_lat, view_lon = self._tracker.view()
         sample = self._state.last_sample
         if sample is None:
-            yield Text("Waiting for ISS data...", style=self._theme.panel_label)
+            yield Text("Waiting for ISS data…", style=self._theme.panel_label)
             return
         canvas = render_globe(width=width, height=height,
                               view_lat=view_lat, view_lon=view_lon,
                               iss_lat=sample.lat, iss_lon=sample.lon,
                               trail=self._trail, theme=self._theme)
+        _stamp_stats_overlay(canvas, self._state, self._theme)
         yield _canvas_to_text(canvas)
+
+
+def _stamp_stats_overlay(canvas: list[list[StyledCell]],
+                         state: AppState,
+                         theme: Theme,
+                         now: float | None = None) -> None:
+    """Overwrite top-right corner cells with right-aligned stats lines."""
+    if now is None:
+        now = time.time()
+    if not canvas or not canvas[0]:
+        return
+
+    label_style = theme.panel_label
+    value_style = theme.panel_value
+
+    sample = state.last_sample
+    if sample is None:
+        rows: list[tuple[str, str, Style]] = [
+            ("LAT", "—", value_style),
+            ("LON", "—", value_style),
+            ("ALT", "—", value_style),
+            ("VEL", "—", value_style),
+        ]
+    else:
+        rows = [
+            ("LAT", f"{sample.lat:+7.2f}°", value_style),
+            ("LON", f"{sample.lon:+7.2f}°", value_style),
+            ("ALT", f"{sample.altitude_km:6.1f} km", value_style),
+            ("VEL", f"{int(sample.velocity_kmh):>5} km/h", value_style),
+        ]
+
+    if state.last_sample_at == 0.0:
+        age_text, age_style = "—", value_style
+    else:
+        age = now - state.last_sample_at
+        if age > 30:
+            age_text, age_style = f"{int(age)}s stale", theme.panel_stale
+        else:
+            age_text, age_style = f"{int(age)}s", value_style
+    rows.append(("AGE", age_text, age_style))
+
+    if state.last_error:
+        rows.append(("ERR", state.last_error[:14], theme.panel_stale))
+
+    canvas_w = len(canvas[0])
+    canvas_h = len(canvas)
+    max_w = max(len(label) + 2 + len(value) for label, value, _ in rows)
+    right_margin = 2
+    top_margin = 1
+    col_start = max(0, canvas_w - right_margin - max_w)
+
+    for line_idx, (label, value, val_style) in enumerate(rows):
+        row_idx = top_margin + line_idx
+        if row_idx >= canvas_h:
+            break
+        gap = max_w - len(label) - len(value)
+        col = col_start
+        for ch in label:
+            if col >= canvas_w:
+                break
+            canvas[row_idx][col] = StyledCell(ch, label_style)
+            col += 1
+        for _ in range(gap):
+            if col >= canvas_w:
+                break
+            canvas[row_idx][col] = StyledCell(" ", label_style)
+            col += 1
+        for ch in value:
+            if col >= canvas_w:
+                break
+            canvas[row_idx][col] = StyledCell(ch, val_style)
+            col += 1
 
 
 def _canvas_to_text(canvas: list[list[StyledCell]]) -> Text:
@@ -67,54 +139,3 @@ def _canvas_to_text(canvas: list[list[StyledCell]]) -> Text:
         if y < len(canvas) - 1:
             text.append("\n")
     return text
-
-
-def stats_panel(state: AppState, theme: Theme, now: float | None = None) -> Panel:
-    if now is None:
-        now = time.time()
-
-    table = Table.grid(padding=(0, 1))
-    table.add_column(justify="left", style=theme.panel_label)
-    table.add_column(justify="right", style=theme.panel_value)
-
-    sample = state.last_sample
-    if sample is None:
-        table.add_row("LAT", "—")
-        table.add_row("LON", "—")
-        table.add_row("ALT", "—")
-        table.add_row("VEL", "—")
-    else:
-        table.add_row("LAT", f"{sample.lat:+8.2f}°")
-        table.add_row("LON", f"{sample.lon:+8.2f}°")
-        table.add_row("ALT", f"{sample.altitude_km:6.1f} km")
-        table.add_row("VEL", f"{sample.velocity_kmh:6.0f} km/h")
-
-    age = now - state.last_sample_at if state.last_sample_at else None
-    if age is None:
-        age_text = Text("—", style=theme.panel_value)
-    elif age > 30:
-        age_text = Text(f"{int(age)}s (stale)", style=theme.panel_stale)
-    else:
-        age_text = Text(f"{int(age)}s", style=theme.panel_value)
-    table.add_row("AGE", age_text)
-
-    if state.last_error:
-        table.add_row("ERR", Text(state.last_error[:18], style=theme.panel_stale))
-
-    return Panel(table, title="ISS", title_align="left",
-                 border_style=theme.panel_label)
-
-
-def build_layout(*, tracker: ViewTracker, trail: Trail, theme: Theme,
-                 state: AppState) -> Layout:
-    layout = Layout()
-    layout.split_row(
-        Layout(name="globe", ratio=4),
-        Layout(name="stats", size=26),
-    )
-    layout["globe"].update(Align.center(
-        GlobePane(tracker=tracker, trail=trail, theme=theme, state=state),
-        vertical="middle",
-    ))
-    layout["stats"].update(stats_panel(state, theme))
-    return layout

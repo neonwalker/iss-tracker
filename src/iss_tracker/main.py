@@ -13,7 +13,7 @@ from .iss_api import IssApi
 from .theme import get_theme
 from .tracker import ViewTracker
 from .trail import Trail
-from .ui import AppState, build_layout, stats_panel
+from .ui import AppState, GlobePane
 
 
 VIEW_DAMPING = 0.15
@@ -53,14 +53,13 @@ async def _render_loop(args: Args, source, console: Console) -> None:
     )
 
     frame_interval = 1.0 / args.fps
-    layout = build_layout(tracker=tracker, trail=trail, theme=theme, state=state)
+    pane = GlobePane(tracker=tracker, trail=trail, theme=theme, state=state)
     try:
-        with Live(layout, console=console, screen=True,
+        with Live(pane, console=console, screen=True,
                   refresh_per_second=args.fps) as live:
             while True:
                 for _ in range(DAMPED_STEPS_PER_FRAME):
                     tracker.step()
-                layout["stats"].update(stats_panel(state, theme))
                 live.refresh()
                 await asyncio.sleep(frame_interval)
     except (KeyboardInterrupt, asyncio.CancelledError):
