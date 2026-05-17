@@ -71,11 +71,15 @@ def render_globe(*,
             i = cy_idx * width + cx_idx
             land_patterns[i] |= BRAILLE_BITS[py % VIRTUAL_DOT_HEIGHT][px % VIRTUAL_DOT_WIDTH]
 
+    # A fully-saturated cell (0xFF) is interior land; any partial pattern
+    # straddles land + ocean → coastline.
     for cy_idx in range(height):
         for cx_idx in range(width):
             pattern = land_patterns[cy_idx * width + cx_idx]
-            if pattern:
-                canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[pattern], theme.land)
+            if not pattern:
+                continue
+            style = theme.land if pattern == 0xFF else theme.coast
+            canvas[cy_idx][cx_idx] = StyledCell(BRAILLE_CHARS[pattern], style)
 
     # Pass 2: trail (forward-project each stored point).
     for point in trail:

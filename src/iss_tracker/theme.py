@@ -12,6 +12,7 @@ class Theme:
     name: str
     background: Style
     land: Style
+    coast: Style
     grid: Style
     iss_marker: Style
     trail_dim: Style
@@ -26,6 +27,7 @@ _THEMES: dict[str, Theme] = {
         name="default",
         background=Style(color="grey15"),
         land=Style(color="cyan3"),
+        coast=Style(color="bright_cyan", bold=True),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
         trail_dim=Style(color="grey42"),
@@ -38,6 +40,7 @@ _THEMES: dict[str, Theme] = {
         name="green",
         background=Style(color="grey15"),
         land=Style(color="green4"),
+        coast=Style(color="bright_green", bold=True),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
         trail_dim=Style(color="grey42"),
@@ -50,6 +53,7 @@ _THEMES: dict[str, Theme] = {
         name="red",
         background=Style(color="grey15"),
         land=Style(color="red3"),
+        coast=Style(color="bright_red", bold=True),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
         trail_dim=Style(color="grey42"),
@@ -62,6 +66,7 @@ _THEMES: dict[str, Theme] = {
         name="violet",
         background=Style(color="grey15"),
         land=Style(color="purple4"),
+        coast=Style(color="bright_magenta", bold=True),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
         trail_dim=Style(color="grey42"),
