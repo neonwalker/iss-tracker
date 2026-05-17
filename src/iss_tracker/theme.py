@@ -14,8 +14,9 @@ class Theme:
     land: Style
     grid: Style
     iss_marker: Style
-    trail_dim: Style
-    trail_bright: Style
+    # 5 bands from oldest (almost background) to most recent (bright). Indexed
+    # by floor(intensity * len(bands)).
+    trail_styles: tuple[Style, ...]
     panel_label: Style
     panel_value: Style
     panel_stale: Style
@@ -28,8 +29,13 @@ _THEMES: dict[str, Theme] = {
         land=Style(color="cyan3"),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
-        trail_dim=Style(color="grey42"),
-        trail_bright=Style(color="bright_cyan"),
+        trail_styles=(
+            Style(color="grey23"),
+            Style(color="grey42"),
+            Style(color="grey58"),
+            Style(color="cyan"),
+            Style(color="bright_cyan", bold=True),
+        ),
         panel_label=Style(color="grey58"),
         panel_value=Style(color="bright_white", bold=True),
         panel_stale=Style(color="red"),
@@ -40,8 +46,13 @@ _THEMES: dict[str, Theme] = {
         land=Style(color="green4"),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
-        trail_dim=Style(color="grey42"),
-        trail_bright=Style(color="bright_green"),
+        trail_styles=(
+            Style(color="grey23"),
+            Style(color="grey42"),
+            Style(color="grey58"),
+            Style(color="green"),
+            Style(color="bright_green", bold=True),
+        ),
         panel_label=Style(color="grey58"),
         panel_value=Style(color="bright_white", bold=True),
         panel_stale=Style(color="red"),
@@ -52,8 +63,13 @@ _THEMES: dict[str, Theme] = {
         land=Style(color="red3"),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
-        trail_dim=Style(color="grey42"),
-        trail_bright=Style(color="bright_red"),
+        trail_styles=(
+            Style(color="grey23"),
+            Style(color="grey42"),
+            Style(color="grey58"),
+            Style(color="red"),
+            Style(color="bright_red", bold=True),
+        ),
         panel_label=Style(color="grey58"),
         panel_value=Style(color="bright_white", bold=True),
         panel_stale=Style(color="yellow"),
@@ -64,8 +80,13 @@ _THEMES: dict[str, Theme] = {
         land=Style(color="purple4"),
         grid=Style(color="grey23"),
         iss_marker=Style(color="bright_white", bold=True),
-        trail_dim=Style(color="grey42"),
-        trail_bright=Style(color="bright_magenta"),
+        trail_styles=(
+            Style(color="grey23"),
+            Style(color="grey42"),
+            Style(color="grey58"),
+            Style(color="magenta"),
+            Style(color="bright_magenta", bold=True),
+        ),
         panel_label=Style(color="grey58"),
         panel_value=Style(color="bright_white", bold=True),
         panel_stale=Style(color="red"),
