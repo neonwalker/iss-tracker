@@ -2,6 +2,8 @@
 
 Live ISS position on a rotating Braille globe in your terminal.
 
+![App Demo](assets/pic.png)
+
 ## Install
 
 ```bash
