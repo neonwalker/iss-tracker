@@ -13,7 +13,7 @@ from .iss_api import IssApi
 from .theme import get_theme
 from .tracker import ViewTracker
 from .trail import Trail
-from .ui import AppState, GlobePane
+from .ui import AppState, GlobePane, build_display
 
 
 VIEW_DAMPING = 0.15
@@ -54,8 +54,9 @@ async def _render_loop(args: Args, source, console: Console) -> None:
 
     frame_interval = 1.0 / args.fps
     pane = GlobePane(tracker=tracker, trail=trail, theme=theme, state=state)
+    display = build_display(pane, theme)
     try:
-        with Live(pane, console=console, screen=True,
+        with Live(display, console=console, screen=True,
                   refresh_per_second=args.fps) as live:
             while True:
                 for _ in range(DAMPED_STEPS_PER_FRAME):

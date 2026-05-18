@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 
 from rich.console import Console, ConsoleOptions, RenderResult
+from rich.panel import Panel
 from rich.style import Style
 from rich.text import Text
 
@@ -119,6 +120,26 @@ def _stamp_stats_overlay(canvas: list[list[StyledCell]],
                 break
             canvas[row_idx][col] = StyledCell(ch, val_style)
             col += 1
+
+
+def build_display(pane: GlobePane, theme: Theme) -> Panel:
+    """Wrap the globe pane in a titled Panel so the app announces itself."""
+    title = Text.assemble(
+        ("● ", Style(color="bright_white", bold=True)),
+        ("ISS TRACKER", Style(color="bright_white", bold=True)),
+        (" ●", Style(color="bright_white", bold=True)),
+    )
+    subtitle = Text(
+        "INTERNATIONAL SPACE STATION · NORAD 25544",
+        style=theme.panel_label,
+    )
+    return Panel(
+        pane,
+        title=title,
+        subtitle=subtitle,
+        border_style=theme.coast,
+        padding=(0, 0),
+    )
 
 
 def _canvas_to_text(canvas: list[list[StyledCell]]) -> Text:
